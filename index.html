@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simulador de Físicas</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        background-color: #eef;
+      }
+      #controls {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 10px;
+        border-radius: 8px;
+        z-index: 10;
+        font-family: sans-serif;
+        font-size: 14px;
+      }
+      #controls label {
+        display: block;
+        margin-top: 5px;
+      }
+      canvas {
+        display: block;
+        background-image: url(https://c4.wallpaperflare.com/wallpaper/400/469/73/super-mario-super-mario-bros-video-games-pixel-art-pixels-hd-wallpaper-preview.jpg);
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="controls">
+      <label
+        >Gravedad:
+        <input
+          type="range"
+          id="gravityControl"
+          min="0"
+          max="2"
+          step="0.01"
+          value="0.5"
+      /></label>
+      <label
+        >Fricción:
+        <input
+          type="range"
+          id="frictionControl"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.8"
+      /></label>
+      <label
+        >Rebote:
+        <input
+          type="range"
+          id="reboundControl"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.7"
+      /></label>
+      <label
+        >Inercia Máxima:
+        <input
+          type="range"
+          id="inertiaControl"
+          min="1"
+          max="50"
+          step="1"
+          value="20"
+      /></label>
+      <label
+        >Tamaño Círculo:
+        <input
+          type="range"
+          id="sizeControl"
+          min="20"
+          max="150"
+          step="1"
+          value="50"
+      /></label>
+      <label
+        >Color Círculo: <input type="color" id="colorControl" value="#ff0000"
+      /></label>
+      <label
+        ><input type="checkbox" id="trajectoryControl" /> Mostrar
+        Trayectoria</label
+      >
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+      /**
+       * @file Simulador de físicas 2D que demuestra conceptos básicos de movimiento, gravedad, colisiones y fricción.
+       * @version 1.0.0
+       * @license MIT
+       */
+
+      // Configuración inicial del canvas y contexto de dibujo
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Ajustar tamaño del canvas al viewport
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      /**
+       * Variables de configuración física
+       * @namespace PhysicsConfig
+       */
+      let gravity = 0.5; // Aceleración gravitacional (píxeles/frame²)
+      let floorFriction = 0.8; // Coeficiente de fricción con el suelo (0-1)
+      let reboundFactor = 0.7; // Coeficiente de restitución (rebote, 0-1)
+      let maxInertia = 20; // Velocidad máxima que puede alcanzar el objeto
+      let showTrajectory = false; // Mostrar trayectoria predicha
+
+      /**
+       * Objeto que representa el círculo interactivo
+       * @namespace Circle
+       * @property {number} x - Posición horizontal en píxeles
+       * @property {number} y - Posición vertical en píxeles
+       * @property {number} size - Diámetro del círculo en píxeles
+       * @property {string} color - Color de relleno del círculo
+       * @property {number} velocityX - Velocidad horizontal (píxeles/frame)
+       * @property {number} velocityY - Velocidad vertical (píxeles/frame)
+       */
+      const circle = {
+        x: 100,
+        y: 100,
+        size: 50,
+        color: "red",
+        velocityX: 2,
+        velocityY: 0,
+      };
+
+      /**
+       * Array de obstáculos rectangulares en la escena
+       * @type {Array<{
+       *   x: number,
+       *   y: number,
+       *   size: number
+       * }>}
+       */
+      const obstacles = [
+        { x: 400, y: canvas.height - 100, size: 60 },
+        { x: 700, y: canvas.height - 150, size: 80 },
+      ];
+
+      // Variables para el arrastre del círculo
+      let dragging = false; // Indica si el círculo está siendo arrastrado
+      let dragOffsetX = 0; // Offset horizontal del click dentro del círculo
+      let dragOffsetY = 0; // Offset vertical del click dentro del círculo
+      let prevMouseX = 0; // Posición horizontal previa del ratón
+      let prevMouseY = 0; // Posición vertical previa del ratón
+      let lastMouseX = 0; // Última posición horizontal registrada
+      let lastMouseY = 0; // Última posición vertical registrada
+
+      /**
+       * Dibuja el suelo (plataforma base) en el canvas.
+       * @function drawFloor
+       */
+      function drawFloor() {
+        ctx.fillStyle = "green";
+        ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+      }
+
+      /**
+       * Dibuja el círculo principal en su posición actual.
+       * @function drawCircle
+       */
+      function drawCircle() {
+        ctx.fillStyle = circle.color;
+        ctx.beginPath();
+        ctx.arc(
+          circle.x + circle.size / 2,
+          circle.y + circle.size / 2,
+          circle.size / 2,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+
+      /**
+       * Dibuja todos los obstáculos en la escena.
+       * @function drawObstacles
+       */
+      function drawObstacles() {
+        ctx.fillStyle = "blue";
+
+        obstacles.forEach((obs) => {
+          ctx.fillRect(obs.x, obs.y, obs.size, obs.size);
+        });
+      }
+
+      /**
+       * Detecta y maneja colisiones entre el círculo y los obstáculos.
+       * @function checkObstacleCollision
+       * @description
+       * Implementa detección de colisión AABB (Axis-Aligned Bounding Box) entre el círculo (tratado como cuadrado para simplificar)
+       * y los obstáculos rectangulares. Determina si la colisión es principalmente horizontal o vertical y aplica
+       * el rebote correspondiente.
+       *
+       * La física de colisión simplificada:
+       * 1. Detecta superposición entre las áreas
+       * 2. Determina el eje principal de colisión comparando las distancias entre centros
+       * 3. Invierte la velocidad en el eje correspondiente y aplica el factor de rebote
+       */
+      function checkObstacleCollision() {
+        obstacles.forEach((obs) => {
+          // Detección de colisión AABB (simplificada para círculo como cuadrado)
+          if (
+            circle.x + circle.size > obs.x &&
+            circle.x < obs.x + obs.size &&
+            circle.y + circle.size > obs.y &&
+            circle.y < obs.y + obs.size
+          ) {
+            // Determinar dirección principal de colisión
+            if (
+              Math.abs(circle.x + circle.size / 2 - (obs.x + obs.size / 2)) >
+              Math.abs(circle.y + circle.size / 2 - (obs.y + obs.size / 2))
+            ) {
+              // Colisión principalmente horizontal
+              circle.velocityX = -circle.velocityX * reboundFactor;
+            } else {
+              // Colisión principalmente vertical
+              circle.velocityY = -circle.velocityY * reboundFactor;
+            }
+          }
+        });
+      }
+
+      /**
+       * Dibuja la trayectoria predicha del círculo basada en la física actual.
+       * @function drawTrajectory
+       * @description
+       * Simula la física del círculo en un entorno virtual para predecir y dibujar su trayectoria.
+       *
+       * La simulación:
+       * 1. Copia el estado actual del círculo
+       * 2. Aplica iterativamente las fuerzas (gravedad)
+       * 3. Detecta colisiones con bordes, suelo y obstáculos
+       * 4. Aplica las mismas reglas físicas que en la simulación principal
+       * 5. Detiene la simulación cuando la velocidad es muy baja
+       *
+       * Este método es útil para visualizar cómo afectan los parámetros físicos al movimiento.
+       */
+      function drawTrajectory() {
+        if (!showTrajectory) return;
+        if (
+          Math.abs(circle.velocityX) < 0.1 &&
+          Math.abs(circle.velocityY) < 0.1
+        )
+          return;
+
+        // Crear copia temporal del estado para simulación
+        let tempX = circle.x;
+        let tempY = circle.y;
+        let tempVX = circle.velocityX;
+        let tempVY = circle.velocityY;
+
+        ctx.beginPath();
+        ctx.moveTo(tempX + circle.size / 2, tempY + circle.size / 2);
+
+        // Simular hasta 500 frames o hasta que el objeto se detenga
+        for (let i = 0; i < 500; i++) {
+          // Aplicar gravedad
+          tempVY += gravity;
+
+          // Actualizar posición
+          tempX += tempVX;
+          tempY += tempVY;
+
+          // Colisión con el suelo
+          if (tempY + circle.size > canvas.height - 20) {
+            tempY = canvas.height - 20 - circle.size;
+            tempVY *= -reboundFactor; // Rebote con pérdida de energía
+            tempVX *= floorFriction; // Aplicar fricción en el suelo
+          }
+
+          // Colisión con bordes laterales
+          if (tempX <= 0 || tempX + circle.size >= canvas.width) {
+            tempVX *= -reboundFactor;
+            if (tempX <= 0) tempX = 0;
+            if (tempX + circle.size >= canvas.width)
+              tempX = canvas.width - circle.size;
+          }
+
+          // Comprobar colisión con obstáculos en la simulación
+          obstacles.forEach((obs) => {
+            if (
+              tempX + circle.size > obs.x &&
+              tempX < obs.x + obs.size &&
+              tempY + circle.size > obs.y &&
+              tempY < obs.y + obs.size
+            ) {
+              if (
+                Math.abs(tempX + circle.size / 2 - (obs.x + obs.size / 2)) >
+                Math.abs(tempY + circle.size / 2 - (obs.y + obs.size / 2))
+              ) {
+                tempVX = -tempVX * reboundFactor;
+              } else {
+                tempVY = -tempVY * reboundFactor;
+              }
+            }
+          });
+
+          // Añadir punto a la trayectoria
+          ctx.lineTo(tempX + circle.size / 2, tempY + circle.size / 2);
+
+          // Detener simulación si la velocidad es muy baja
+          if (Math.abs(tempVX) < 0.1 && Math.abs(tempVY) < 0.1) break;
+        }
+
+        // Dibujar la línea de trayectoria
+        ctx.strokeStyle = circle.color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      /**
+       * Función principal de actualización del simulador.
+       * @function update
+       * @description
+       * Actualiza el estado físico del círculo y redibuja toda la escena en cada frame.
+       *
+       * La física implementada incluye:
+       * 1. Aplicación de gravedad (aceleración constante hacia abajo)
+       * 2. Actualización de posición basada en velocidad
+       * 3. Detección y respuesta a colisiones con bordes y suelo
+       * 4. Aplicación de fricción y rebote en colisiones
+       * 5. Manejo de arrastre del objeto con el ratón
+       *
+       * Este bucle se ejecuta aproximadamente 60 veces por segundo (dependiendo del monitor).
+       */
+      function update() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (!dragging) {
+          // Aplicar gravedad (aumentar velocidad vertical)
+          circle.velocityY += gravity;
+
+          // Actualizar posición
+          circle.x += circle.velocityX;
+          circle.y += circle.velocityY;
+
+          // Colisión con el suelo
+          if (circle.y + circle.size > canvas.height - 20) {
+            circle.y = canvas.height - 20 - circle.size;
+            circle.velocityY *= -reboundFactor; // Rebote con pérdida de energía
+            circle.velocityX *= floorFriction; // Aplicar fricción en el suelo
+          }
+
+          // Colisión con bordes laterales
+          if (circle.x <= 0) {
+            circle.x = 0;
+            circle.velocityX *= -reboundFactor;
+          }
+          if (circle.x + circle.size >= canvas.width) {
+            circle.x = canvas.width - circle.size;
+            circle.velocityX *= -reboundFactor;
+          }
+
+          // Colisión con techo
+          if (circle.y <= 0) {
+            circle.y = 0;
+            circle.velocityY *= -reboundFactor;
+          }
+
+          // Comprobar colisión con obstáculos
+          checkObstacleCollision();
+        }
+
+        // Dibujar todos los elementos
+        drawFloor();
+        drawObstacles();
+        drawCircle();
+        drawTrajectory();
+
+        // Solicitar próximo frame de animación
+        requestAnimationFrame(update);
+      }
+
+      // Iniciar el bucle de animación
+      update();
+
+      // Evento para redimensionar el canvas cuando cambia el tamaño de la ventana
+      window.addEventListener("resize", () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      });
+
+      /**
+       * Manejador de evento para iniciar el arrastre del círculo.
+       * @event canvas#mousedown
+       * @description
+       * Detecta cuando el usuario hace clic sobre el círculo y prepara el arrastre:
+       * 1. Verifica si el clic está dentro del área del círculo
+       * 2. Calcula el offset del clic dentro del círculo
+       * 3. Almacena la posición inicial para cálculo de velocidad posterior
+       */
+      canvas.addEventListener("mousedown", (e) => {
+        const mouseX = e.clientX;
+        const mouseY = e.clientY;
+
+        // Calcular distancia desde el centro del círculo
+        const dx = mouseX - (circle.x + circle.size / 2);
+        const dy = mouseY - (circle.y + circle.size / 2);
+
+        // Verificar si el clic está dentro del círculo (fórmula de distancia)
+        if (Math.sqrt(dx * dx + dy * dy) <= circle.size / 2) {
+          dragging = true;
+          dragOffsetX = mouseX - circle.x;
+          dragOffsetY = mouseY - circle.y;
+          lastMouseX = mouseX;
+          lastMouseY = mouseY;
+        }
+      });
+
+      /**
+       * Manejador de evento para arrastrar el círculo.
+       * @event canvas#mousemove
+       * @description
+       * Actualiza la posición del círculo mientras es arrastrado:
+       * 1. Actualiza la posición del círculo según el movimiento del ratón
+       * 2. Almacena posiciones previas para cálculo de velocidad
+       */
+      canvas.addEventListener("mousemove", (e) => {
+        if (dragging) {
+          const mouseX = e.clientX;
+          const mouseY = e.clientY;
+
+          // Mover el círculo manteniendo el offset del clic
+          circle.x = mouseX - dragOffsetX;
+          circle.y = mouseY - dragOffsetY;
+
+          // Guardar posiciones para cálculo de velocidad
+          prevMouseX = lastMouseX;
+          prevMouseY = lastMouseY;
+          lastMouseX = mouseX;
+          lastMouseY = mouseY;
+        }
+      });
+
+      /**
+       * Manejador de evento para soltar el círculo.
+       * @event canvas#mouseup
+       * @description
+       * Finaliza el arrastre y calcula la velocidad inicial basada en el movimiento del ratón:
+       * 1. Calcula la velocidad como diferencia entre posiciones del ratón
+       * 2. Limita la velocidad máxima según la configuración
+       * 3. Aplica un factor de reducción para hacer el movimiento más controlable
+       */
+      canvas.addEventListener("mouseup", (e) => {
+        if (dragging) {
+          dragging = false;
+
+          // Calcular velocidad basada en el movimiento del ratón
+          let calculatedVelocityX = (lastMouseX - prevMouseX) * 0.5;
+          let calculatedVelocityY = (lastMouseY - prevMouseY) * 0.5;
+
+          // Limitar velocidad máxima
+          circle.velocityX = Math.max(
+            -maxInertia,
+            Math.min(maxInertia, calculatedVelocityX)
+          );
+          circle.velocityY = Math.max(
+            -maxInertia,
+            Math.min(maxInertia, calculatedVelocityY)
+          );
+        }
+      });
+
+      // Cancelar arrastre si el ratón sale del canvas
+      canvas.addEventListener("mouseleave", () => {
+        dragging = false;
+      });
+
+      // Configuración de controles UI (omitiendo documentación por brevedad)
+      const gravityControl = document.getElementById("gravityControl");
+      const frictionControl = document.getElementById("frictionControl");
+      const reboundControl = document.getElementById("reboundControl");
+      const inertiaControl = document.getElementById("inertiaControl");
+      const sizeControl = document.getElementById("sizeControl");
+      const colorControl = document.getElementById("colorControl");
+      const trajectoryControl = document.getElementById("trajectoryControl");
+
+      gravityControl.addEventListener("input", () => {
+        gravity = parseFloat(gravityControl.value);
+      });
+
+      frictionControl.addEventListener("input", () => {
+        floorFriction = parseFloat(frictionControl.value);
+      });
+
+      reboundControl.addEventListener("input", () => {
+        reboundFactor = parseFloat(reboundControl.value);
+      });
+
+      inertiaControl.addEventListener("input", () => {
+        maxInertia = parseInt(inertiaControl.value);
+      });
+
+      sizeControl.addEventListener("input", () => {
+        circle.size = parseInt(sizeControl.value);
+      });
+
+      colorControl.addEventListener("input", () => {
+        circle.color = colorControl.value;
+      });
+
+      trajectoryControl.addEventListener("change", () => {
+        showTrajectory = trajectoryControl.checked;
+      });
+    </script>
+  </body>
+</html>
